@@ -1,0 +1,7 @@
+{
+  "libraries": {
+    "sml-buildscripts": {
+      "pin": "79eee60c8552"
+    }
+  }
+}

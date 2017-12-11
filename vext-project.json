@@ -1,0 +1,12 @@
+{
+    "config": {
+        "extdir": "ext"
+    },
+    "libraries": {
+	"sml-buildscripts": {
+	    "vcs": "hg",
+	    "service": "bitbucket",
+	    "owner": "cannam"
+	}
+    }
+}
