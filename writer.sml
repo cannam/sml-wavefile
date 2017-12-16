@@ -63,7 +63,9 @@ structure WaveWriter :> AUDIO_FILE_WRITER = struct
 
     fun write_sample_s16 stream value =
         let val n = Real.round (value * 32767.0)
-            val n = if n < ~32768 then ~32768 else if n > 32767 then 32767 else n
+            val n = if n < ~32768 then ~32768
+                    else if n > 32767 then 32767
+                    else n
             val w = LargeWord.fromInt n
             val b0 = Word8.fromLargeWord
                          (LargeWord.andb (w, 0wxff))
