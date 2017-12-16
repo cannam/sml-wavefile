@@ -16,11 +16,16 @@ end
 
 structure WaveReader :> AUDIO_FILE_READER = struct
 
+    type state = {
+        buffer : Word8Vector.vector ref,
+        buffer_index : int ref
+    }
     type t = {
         channels : int,
         rate : int, 
         bitdepth : int,
         stream : BinIO.instream,
+        state : state,
         read_sample : unit -> real option
     }
     datatype 'a result = ERROR of string | OK of 'a
@@ -60,11 +65,16 @@ structure WaveReader :> AUDIO_FILE_READER = struct
             then Word32.toIntX (Word32.orb (0wxff000000, b210))
             else Word32.toIntX b210
         end
+
+
+            (*!!! use buffer *)
+
             
-    fun read1 stream =
-        BinIO.input1 stream
             
-    fun readN stream n =
+            
+    fun read_exact (stream, n) =
+        (* read N bytes and return them; fail, returning NONE, if
+           fewer than N available *)
         let val v = BinIO.inputN (stream, n)
         in
             if Word8Vector.length v = n
@@ -72,37 +82,86 @@ structure WaveReader :> AUDIO_FILE_READER = struct
             else NONE
         end
 
+(*    fun read1 stream = *)
+(* use buffer        BinIO.input1 stream *)
+            
     fun read_mandatory_number stream bytes =
-        case readN stream bytes of
+        case read_exact (stream, bytes) of
             SOME v => bytes_to_unsigned v
           | NONE => raise Fail "Failed to read number value"
             
-    fun skipN stream n =
-        ignore (BinIO.inputN (stream, n))
+    fun skip (stream, n) =
+        ignore (read_exact (stream, n))
 
-    fun read_sample_u8 stream =
-        case read1 stream of
+    fun fill_buffer (stream, state) =
+        let val buffer_size = 10240 * 3  (* divisible by all sample widths *)
+            val v = BinIO.inputN (stream, buffer_size)
+        in
+            #buffer state := v;
+            #buffer_index state := 0
+        end
+            
+    fun have_enough (state, n) =
+        Word8Vector.length (! (#buffer state)) >= !(#buffer_index state) + n
+
+    fun fill_maybe (stream, state, n) =
+        if have_enough (state, n)
+        then ()
+        else fill_buffer (stream, state)
+
+    fun read_buffered (stream, state, n) =
+        let val _ = fill_maybe (stream, state, n)
+            open Word8Vector
+        in
+            if have_enough (state, n)
+            then
+                let val result =
+                        tabulate (n, fn i => sub (!(#buffer state),
+                                                  !(#buffer_index state) + i))
+                in
+                    #buffer_index state := !(#buffer_index state) + n;
+                    SOME result
+                end
+            else NONE
+        end
+
+    fun read_buffered_1 (stream, state) =
+        let val _ = fill_maybe (stream, state, 1)
+            open Word8Vector
+        in
+            if have_enough (state, 1)
+            then
+                let val result = sub (!(#buffer state), !(#buffer_index state))
+                in
+                    #buffer_index state := !(#buffer_index state) + 1;
+                    SOME result
+                end
+            else NONE
+        end
+               
+    fun read_sample_u8 (stream, state) =
+        case read_buffered_1 (stream, state) of
             SOME b => SOME ((Real.fromInt ((Word8.toInt b) - 128)) / 128.0)
-          | NONE => NONE
+          | _ => NONE
 
-    fun read_sample_s16 stream =
-        case readN stream 2 of
+    fun read_sample_s16 (stream, state) =
+        case read_buffered (stream, state, 2) of
             SOME bb => SOME ((Real.fromInt (bytes_to_signed16 bb)) / 32768.0)
           | NONE => NONE
 
-    fun read_sample_s24 stream =
-        case readN stream 3 of
+    fun read_sample_s24 (stream, state) =
+        case read_buffered (stream, state, 3) of
             SOME bb => SOME ((Real.fromInt (bytes_to_signed24 bb)) / 8388608.0)
           | NONE => NONE
                
     fun read_fmt_contents stream =
-        let val n = read_mandatory_number stream
-            val audio_format = n 2
-            val channels = n 2
-            val sample_rate = n 4
-            val byte_rate = n 4
-            val bytes_per_sample = n 2
-            val bits_per_sample = n 2
+        let val num = read_mandatory_number stream
+            val audio_format = num 2
+            val channels = num 2
+            val sample_rate = num 4
+            val byte_rate = num 4
+            val bytes_per_sample = num 2
+            val bits_per_sample = num 2
             val read_sample =
                 case bits_per_sample of
                     8 => read_sample_u8
@@ -110,6 +169,10 @@ structure WaveReader :> AUDIO_FILE_READER = struct
                   | 24 => read_sample_s24
                   | _ => raise Fail ("Unsupported bit depth " ^
                                      (Int.toString bits_per_sample))
+            val state = {
+                buffer = ref (Word8Vector.fromList []),
+                buffer_index = ref 0
+            }
         in
             if audio_format <> 1
             then raise Fail "PCM only supported"
@@ -118,12 +181,13 @@ structure WaveReader :> AUDIO_FILE_READER = struct
                     channels = channels,
                     bitdepth = bits_per_sample,
                     stream = stream,
-                    read_sample = fn () => read_sample stream
+                    state = state,
+                    read_sample = fn () => read_sample (stream, state)
                 }
         end
             
     fun read_tag stream =
-        case readN stream 4 of
+        case read_exact (stream, 4) of
             SOME v => SOME (Byte.bytesToString v)
           | NONE => NONE
 
@@ -136,7 +200,7 @@ structure WaveReader :> AUDIO_FILE_READER = struct
           | NONE => raise Fail "Tag expected"
 
     fun read_chunk_size stream =
-        case readN stream 4 of
+        case read_exact (stream, 4) of
             SOME v => bytes_to_unsigned v
           | NONE => raise Fail "Chunk size expected"
                           
@@ -153,7 +217,7 @@ structure WaveReader :> AUDIO_FILE_READER = struct
             in
                 if tag = "data"
                 then size
-                else (skipN stream size; skip_to_data stream)
+                else (skip (stream, size); skip_to_data stream)
             end
           | NONE => raise Fail "Tag expected"
             
