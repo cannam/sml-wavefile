@@ -32,69 +32,30 @@ structure WaveReader :> AUDIO_FILE_READER = struct
                                                      
     val extensionsSupported = [ "wav" ]
 
-    fun bytes_to_unsigned bb =
-        let fun bb_aux [] = 0
-              | bb_aux (x::xs) =
-                (Char.ord x + (256 * bb_aux xs))
-        in
-            bb_aux (String.explode (Byte.bytesToString bb))
-        end
-
-    fun bytes_to_signed16 bb =
-        let val b1 = Word8Vector.sub (bb, 1) (* higher byte *)
-            val b0 = Word8Vector.sub (bb, 0) (* lower, wav is little-endian *)
-            val widen = Word32.fromLargeWord o Word8.toLargeWord
-            val b10 = Word32.orb (widen b0, Word32.<< (widen b1, 0w8))
-        in
-            if (Word8.andb (b1, 0wx80) = 0wx80) (* -ve *)
-            then Word32.toIntX (Word32.orb (0wxffff0000, b10))
-            else Word32.toIntX b10
-        end
-            
-    fun bytes_to_signed24 bb =
-        (*!!! test *)
-        let val b2 = Word8Vector.sub (bb, 2) (* highest byte *)
-            val b1 = Word8Vector.sub (bb, 1) (* higher byte *)
-            val b0 = Word8Vector.sub (bb, 0) (* lower, wav is little-endian *)
-            val widen = Word32.fromLargeWord o Word8.toLargeWord
-            val b210 = Word32.orb (widen b0,
-                                   Word32.orb (Word32.<< (widen b1, 0w8),
-                                               Word32.<< (widen b2, 0w16)))
-        in
-            if (Word8.andb (b2, 0wx80) = 0wx80) (* -ve *)
-            then Word32.toIntX (Word32.orb (0wxff000000, b210))
-            else Word32.toIntX b210
-        end
-
-
-            (*!!! use buffer *)
-
-            
-            
-            
     fun read_exact (stream, n) =
         (* read N bytes and return them; fail, returning NONE, if
            fewer than N available *)
         let val v = BinIO.inputN (stream, n)
         in
             if Word8Vector.length v = n
-            then SOME v
+            then SOME (List.tabulate (n, fn i => Word8Vector.sub (v, i)))
             else NONE
         end
-
-(*    fun read1 stream = *)
-(* use buffer        BinIO.input1 stream *)
-            
-    fun read_mandatory_number stream bytes =
-        case read_exact (stream, bytes) of
-            SOME v => bytes_to_unsigned v
-          | NONE => raise Fail "Failed to read number value"
             
     fun skip (stream, n) =
-        ignore (read_exact (stream, n))
+        ignore (BinIO.inputN (stream, n))
+
+    fun bytes_to_unsigned [] = 0
+      | bytes_to_unsigned (b::bs) =
+        (Word8.toInt b) + (256 * bytes_to_unsigned bs)
+
+    fun read_mandatory_number stream bytes =
+        case read_exact (stream, bytes) of
+            SOME bb => bytes_to_unsigned bb
+          | NONE => raise Fail "Failed to read number value"
 
     fun fill_buffer (stream, state) =
-        let val buffer_size = 10240 * 3  (* divisible by all sample widths *)
+        let val buffer_size = 90000  (* divisible by all sample widths *)
             val v = BinIO.inputN (stream, buffer_size)
         in
             #buffer state := v;
@@ -111,48 +72,59 @@ structure WaveReader :> AUDIO_FILE_READER = struct
 
     fun read_buffered (stream, state, n) =
         let val _ = fill_maybe (stream, state, n)
-            open Word8Vector
         in
-            if have_enough (state, n)
-            then
-                let val result =
-                        tabulate (n, fn i => sub (!(#buffer state),
-                                                  !(#buffer_index state) + i))
+            if not (have_enough (state, n))
+            then NONE
+            else
+                let val bb =
+                        List.tabulate
+                            (n, fn i => Word8Vector.sub
+                                            (!(#buffer state),
+                                             !(#buffer_index state) + i))
                 in
                     #buffer_index state := !(#buffer_index state) + n;
-                    SOME result
+                    SOME bb
                 end
-            else NONE
         end
 
-    fun read_buffered_1 (stream, state) =
-        let val _ = fill_maybe (stream, state, 1)
-            open Word8Vector
+    val widen = Word32.fromLargeWord o Word8.toLargeWord
+
+    fun bytes_to_signed16 (b0, b1) = (* lower first, wav is little-endian *)
+        let val b10 = Word32.orb (widen b0, Word32.<< (widen b1, 0w8))
         in
-            if have_enough (state, 1)
-            then
-                let val result = sub (!(#buffer state), !(#buffer_index state))
-                in
-                    #buffer_index state := !(#buffer_index state) + 1;
-                    SOME result
-                end
-            else NONE
+            if (Word8.andb (b1, 0wx80) = 0wx80) (* -ve *)
+            then Word32.toIntX (Word32.orb (0wxffff0000, b10))
+            else Word32.toIntX b10
         end
-               
+            
+    fun bytes_to_signed24 (b0, b1, b2) =
+        (*!!! test *)
+        let val b210 = Word32.orb (widen b0,
+                                   Word32.orb (Word32.<< (widen b1, 0w8),
+                                               Word32.<< (widen b2, 0w16)))
+        in
+            if (Word8.andb (b2, 0wx80) = 0wx80) (* -ve *)
+            then Word32.toIntX (Word32.orb (0wxff000000, b210))
+            else Word32.toIntX b210
+        end
+
     fun read_sample_u8 (stream, state) =
-        case read_buffered_1 (stream, state) of
-            SOME b => SOME ((Real.fromInt ((Word8.toInt b) - 128)) / 128.0)
+        case read_buffered (stream, state, 1) of
+            SOME [b] =>
+            SOME ((Real.fromInt ((Word8.toInt b) - 128)) / 128.0)
           | _ => NONE
 
     fun read_sample_s16 (stream, state) =
         case read_buffered (stream, state, 2) of
-            SOME bb => SOME ((Real.fromInt (bytes_to_signed16 bb)) / 32768.0)
-          | NONE => NONE
+            SOME [b0, b1] =>
+            SOME ((Real.fromInt (bytes_to_signed16 (b0, b1))) / 32768.0)
+          | _ => NONE
 
     fun read_sample_s24 (stream, state) =
         case read_buffered (stream, state, 3) of
-            SOME bb => SOME ((Real.fromInt (bytes_to_signed24 bb)) / 8388608.0)
-          | NONE => NONE
+            SOME [b0, b1, b2] =>
+            SOME ((Real.fromInt (bytes_to_signed24 (b0, b1, b2))) / 8388608.0)
+          | _ => NONE
                
     fun read_fmt_contents stream =
         let val num = read_mandatory_number stream
@@ -188,7 +160,7 @@ structure WaveReader :> AUDIO_FILE_READER = struct
             
     fun read_tag stream =
         case read_exact (stream, 4) of
-            SOME v => SOME (Byte.bytesToString v)
+            SOME v => SOME (implode (map (Char.chr o Word8.toInt) v))
           | NONE => NONE
 
     fun read_expected_tag stream expected =
