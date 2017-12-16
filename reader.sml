@@ -192,13 +192,20 @@ structure WaveReader :> AUDIO_FILE_READER = struct
     fun rate (t: t) =
         #rate t
 
-    fun readInterleaved (t, n) =
-        let fun read_aux 0 acc = acc
-              | read_aux m acc = case (#read_sample t) () of
-                                     SOME s => read_aux (m-1) (s::acc)
-                                   | NONE => acc
+    fun readInterleaved (t, nframes) =
+        let open Array
+            val n = nframes * channels t
+            val result = array (n, 0.0)
+            fun read_aux (i, 0) = i
+              | read_aux (i, m) =
+                case (#read_sample t) () of NONE => i
+                                          | SOME s => (update (result, i, s);
+                                                       read_aux (i + 1, m - 1))
+            val count = read_aux (0, n)
         in
-            Vector.fromList (rev (read_aux (n * channels t) []))
+            vector (if count = n
+                    then result
+                    else tabulate (count, fn i => sub (result, i)))
         end
-                                                         
+
 end
