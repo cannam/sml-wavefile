@@ -124,7 +124,7 @@ structure WaveWriter :> AUDIO_FILE_WRITER = struct
                ERROR ("Error while writing " ^ filename ^ ": " ^ msg)
 
     fun seek (stream, pos) =
-        case BinIO.StreamIO.getWriter(BinIO.getOutstream stream) of
+        case BinIO.StreamIO.getWriter (BinIO.getOutstream stream) of
             (writer as BinPrimIO.WR { setPos = SOME f, ... }, bufmode) =>
             (f pos;
              BinIO.setOutstream(stream,

@@ -27,18 +27,32 @@
 *)
 
 signature AUDIO_FILE_READER = sig
+
     type t
     datatype 'a result = ERROR of string | OK of 'a
 
     val extensionsSupported : string list
 
+    (** Open an audio file and prepare to read from the first sample frame *)
     val openFile : string -> t result
+
+    (** Close an audio file *)
     val close : t -> unit
 
+    (** Return the number of audio channels in the file *)
     val channels : t -> int
+
+    (** Return the audio sample rate of the file *)
     val rate : t -> int
-            
+
+    (** Seek to a position in the file, given as an audio sample frame
+        count *)
+    val seekTo : t * Position.int -> t result
+
+    (** Read a number of audio sample frames from the file, and return
+        them interleaved in a single vector *)
     val readInterleaved : t * int -> real vector
+
 end
 
 structure WaveReader :> AUDIO_FILE_READER = struct
@@ -51,6 +65,7 @@ structure WaveReader :> AUDIO_FILE_READER = struct
         channels : int,
         rate : int, 
         bitdepth : int,
+        startpos : Position.int,
         stream : BinIO.instream,
         state : state,
         read_sample : unit -> real option
@@ -59,6 +74,23 @@ structure WaveReader :> AUDIO_FILE_READER = struct
                                                      
     val extensionsSupported = [ "wav" ]
 
+    fun seek (stream, pos) =
+        case BinIO.StreamIO.getReader (BinIO.getInstream stream) of
+            (reader as BinPrimIO.RD { setPos = SOME f, ... }, _) =>
+            ( f pos;
+              BinIO.setInstream
+                  (stream,
+                   BinIO.StreamIO.mkInstream (reader, Word8Vector.fromList [])))
+          | (BinPrimIO.RD { name, ... }, _) =>
+            raise IO.Io {
+                name = name,
+                function = "seek",
+                cause = IO.RandomAccessNotSupported
+            }
+
+    fun tell stream =
+        BinIO.StreamIO.filePosIn (BinIO.getInstream stream)
+              
     fun read_exact (stream, n) =
         (* read N bytes and return them; fail, returning NONE, if
            fewer than N available *)
@@ -88,6 +120,10 @@ structure WaveReader :> AUDIO_FILE_READER = struct
             #buffer state := v;
             #buffer_index state := 0
         end
+
+    fun clear_buffer state =
+        (#buffer state := Word8Vector.fromList [];
+         #buffer_index state := 0)
             
     fun have_enough (state, n) =
         Word8Vector.length (! (#buffer state)) >= !(#buffer_index state) + n
@@ -175,10 +211,11 @@ structure WaveReader :> AUDIO_FILE_READER = struct
         in
             if audio_format <> 1
             then raise Fail "PCM only supported"
-            else OK {
+            else {
                     rate = sample_rate,
                     channels = channels,
                     bitdepth = bits_per_sample,
+                    startpos = 0,
                     stream = stream,
                     state = state,
                     read_sample = fn () => read_sample (stream, state)
@@ -215,7 +252,7 @@ structure WaveReader :> AUDIO_FILE_READER = struct
             let val size = read_chunk_size stream
             in
                 if tag = "data"
-                then size
+                then tell stream
                 else (skip (stream, size); skip_to_data stream)
             end
           | NONE => raise Fail "Tag expected"
@@ -228,9 +265,17 @@ structure WaveReader :> AUDIO_FILE_READER = struct
             if fmt_size = 16
             then
                 let val record = read_fmt_contents stream
-                    val _ = skip_to_data stream
+                    val pos = skip_to_data stream
                 in
-                    record
+                    OK {
+                        rate = #rate record,
+                        channels = #channels record,
+                        bitdepth = #bitdepth record,
+                        startpos = pos,
+                        stream = stream,
+                        state = #state record,
+                        read_sample = #read_sample record
+                    }
                 end
             else raise Fail ("Unexpected size for 'fmt ' chunk (" ^
                              (Int.toString fmt_size) ^ ", expected 16")
@@ -255,6 +300,17 @@ structure WaveReader :> AUDIO_FILE_READER = struct
     fun rate (t: t) =
         #rate t
 
+    fun seekTo (t, nframes) =
+        let val factor = Position.fromInt
+                             (#channels t * Int.quot (#bitdepth t, 8))
+            open Position
+            val pos = #startpos t + nframes * factor
+            val _ = seek (#stream t, pos)
+            val _ = clear_buffer (#state t)
+        in
+            OK t
+        end
+              
     fun readInterleaved (t, nframes) =
         let open Array
             val n = nframes * channels t
