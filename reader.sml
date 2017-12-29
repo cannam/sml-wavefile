@@ -36,9 +36,6 @@ signature AUDIO_FILE_READER = sig
     (** Open an audio file and prepare to read from the first sample frame *)
     val openFile : string -> t result
 
-    (** Close an audio file *)
-    val close : t -> unit
-
     (** Return the number of audio channels in the file *)
     val channels : t -> int
 
@@ -46,12 +43,16 @@ signature AUDIO_FILE_READER = sig
     val rate : t -> int
 
     (** Seek to a position in the file, given as an audio sample frame
-        count *)
-    val seekTo : t * Position.int -> t result
+        count. Modifies internal state in t *)
+    val seekTo : t * Position.int -> unit result
 
     (** Read a number of audio sample frames from the file, and return
-        them interleaved in a single vector *)
+        them interleaved in a single vector. Modifies internal state in t *)
     val readInterleaved : t * int -> real vector
+
+    (** Close an audio file. Modifies internal state in t, which
+        cannot be used subsequently *)
+    val close : t -> unit
 
 end
 
@@ -301,14 +302,16 @@ structure WaveReader :> AUDIO_FILE_READER = struct
         #rate t
 
     fun seekTo (t, nframes) =
-        let val factor = Position.fromInt
-                             (#channels t * Int.quot (#bitdepth t, 8))
+        let val bytes_per_frame = Position.fromInt
+                                      (#channels t * Int.quot (#bitdepth t, 8))
             open Position
-            val pos = #startpos t + nframes * factor
-            val _ = seek (#stream t, pos)
+            val pos = #startpos t + nframes * bytes_per_frame
+            val result =
+                (seek (#stream t, pos); OK ())
+                handle e => ERROR (exnMessage e)
             val _ = clear_buffer (#state t)
         in
-            OK t
+            result
         end
               
     fun readInterleaved (t, nframes) =

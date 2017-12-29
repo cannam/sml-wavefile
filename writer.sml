@@ -33,10 +33,17 @@ signature AUDIO_FILE_WRITER = sig
 
     val extensionsSupported : string list
 
+    (** Open an audio file for writing, with the given channel count
+        and sample rate *)
     val openFile : { filename: string, channels: int, rate: int } -> t result
-    val close : t -> unit
 
+    (** Write a number of audio sample frames to the file. Modifies
+        internal state in t *)
     val writeInterleaved : t * real vector -> unit
+
+    (** Close an audio file. Modifies internal state in t, which
+        cannot be used subsequently *)
+    val close : t -> unit
 
 end
 
