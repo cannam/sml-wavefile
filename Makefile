@@ -12,7 +12,7 @@ clean:
 ${SCRIPTS}:
 	./vext install
 
-%.deps:	%.mlb
+%.deps:	%.mlb ${SCRIPTS}
 	${SCRIPTS}/mlb-dependencies $< > $@
 
 -include example.deps
