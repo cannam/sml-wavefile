@@ -10,7 +10,7 @@ clean:
 	rm -f example
 
 ${SCRIPTS}:
-	./vext install
+	./repoint install
 
 %.deps:	%.mlb
 	${SCRIPTS}/mlb-dependencies $< > $@

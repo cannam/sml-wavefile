@@ -1,6 +1,7 @@
 syntax: glob
 *~
 .vext-*
+.repoint*
 example
 example.deps
 *.orig
