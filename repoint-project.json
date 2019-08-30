@@ -5,7 +5,7 @@
     "libraries": {
 	"sml-buildscripts": {
 	    "vcs": "hg",
-	    "service": "bitbucket",
+	    "service": "sourcehut",
 	    "owner": "cannam"
 	}
     }
