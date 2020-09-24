@@ -114,7 +114,7 @@ structure WaveReader :> AUDIO_FILE_READER = struct
             SOME bb => bytes_to_unsigned bb
           | NONE => raise Fail "Failed to read number value"
 
-    fun fill_buffer (stream, state) =
+    fun fill_buffer (stream, state : state) =
         let val buffer_size = 90000  (* divisible by all of our sample widths *)
             val v = BinIO.inputN (stream, buffer_size)
         in
@@ -122,11 +122,11 @@ structure WaveReader :> AUDIO_FILE_READER = struct
             #buffer_index state := 0
         end
 
-    fun clear_buffer state =
+    fun clear_buffer (state : state) =
         (#buffer state := Word8Vector.fromList [];
          #buffer_index state := 0)
             
-    fun have_enough (state, n) =
+    fun have_enough (state : state, n) =
         Word8Vector.length (! (#buffer state)) >= !(#buffer_index state) + n
 
     fun fill_maybe (stream, state, n) =
@@ -301,7 +301,7 @@ structure WaveReader :> AUDIO_FILE_READER = struct
     fun rate (t: t) =
         #rate t
 
-    fun seekTo (t, nframes) =
+    fun seekTo (t : t, nframes) =
         let val bytes_per_frame = Position.fromInt
                                       (#channels t * Int.quot (#bitdepth t, 8))
             open Position
