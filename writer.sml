@@ -29,6 +29,7 @@
 signature AUDIO_FILE_WRITER = sig
 
     type t
+    type vec
     datatype 'a result = ERROR of string | OK of 'a
 
     val extensionsSupported : string list
@@ -39,7 +40,7 @@ signature AUDIO_FILE_WRITER = sig
 
     (** Write a number of audio sample frames to the file. Modifies
         internal state in t *)
-    val writeInterleaved : t * real vector -> unit
+    val writeInterleaved : t * vec -> unit
 
     (** Close an audio file. Modifies internal state in t, which
         cannot be used subsequently *)
@@ -47,13 +48,16 @@ signature AUDIO_FILE_WRITER = sig
 
 end
 
-structure WaveWriter :> AUDIO_FILE_WRITER = struct
+structure WaveWriter :>
+          AUDIO_FILE_WRITER
+              where type vec = RealVector.vector = struct
 
     type t = {
         stream : BinIO.outstream,
         write_sample : real -> unit,
         written : int ref
     }
+    type vec = RealVector.vector
     datatype 'a result = ERROR of string | OK of 'a
                  
     val bitdepth = 16  (* our only supported format *)
@@ -153,7 +157,7 @@ structure WaveWriter :> AUDIO_FILE_WRITER = struct
         end
 
     fun writeInterleaved (t: t, v) =
-        Vector.app (#write_sample t) v
+        RealVector.app (#write_sample t) v
                            
     fun close (t: t) =
         let val stream = #stream t

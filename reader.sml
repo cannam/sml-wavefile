@@ -29,6 +29,7 @@
 signature AUDIO_FILE_READER = sig
 
     type t
+    type vec
     datatype 'a result = ERROR of string | OK of 'a
 
     val extensionsSupported : string list
@@ -48,7 +49,7 @@ signature AUDIO_FILE_READER = sig
 
     (** Read a number of audio sample frames from the file, and return
         them interleaved in a single vector. Modifies internal state in t *)
-    val readInterleaved : t * int -> real vector
+    val readInterleaved : t * int -> vec
 
     (** Close an audio file. Modifies internal state in t, which
         cannot be used subsequently *)
@@ -56,7 +57,9 @@ signature AUDIO_FILE_READER = sig
 
 end
 
-structure WaveReader :> AUDIO_FILE_READER = struct
+structure WaveReader :>
+          AUDIO_FILE_READER
+              where type vec = RealVector.vector = struct
 
     type state = {
         buffer : Word8Vector.vector ref,
@@ -71,6 +74,7 @@ structure WaveReader :> AUDIO_FILE_READER = struct
         state : state,
         read_sample : unit -> real option
     }
+    type vec = RealVector.vector
     datatype 'a result = ERROR of string | OK of 'a
                                                      
     val extensionsSupported = [ "wav" ]
@@ -315,7 +319,7 @@ structure WaveReader :> AUDIO_FILE_READER = struct
         end
               
     fun readInterleaved (t, nframes) =
-        let open Array
+        let open RealArray
             val n = nframes * channels t
             val result = array (n, 0.0)
             fun read_aux (i, 0) = i
