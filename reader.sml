@@ -43,6 +43,9 @@ signature AUDIO_FILE_READER = sig
     (** Return the audio sample rate of the file *)
     val rate : t -> int
 
+    (** Return the expected number of frames in the file *)
+    val frameCount : t -> int
+            
     (** Seek to a position in the file, given as an audio sample frame
         count. Modifies internal state in t *)
     val seekTo : t * Position.int -> unit result
@@ -67,7 +70,8 @@ structure WaveReader :>
     }
     type t = {
         channels : int,
-        rate : int, 
+        rate : int,
+        frame_count : int,
         bitdepth : int,
         startpos : Position.int,
         stream : BinIO.instream,
@@ -194,7 +198,7 @@ structure WaveReader :>
             SOME ((Real.fromInt (bytes_to_signed24 (b0, b1, b2))) / 8388608.0)
           | _ => NONE
                
-    fun read_fmt_contents stream =
+    fun read_fmt_contents data_size stream =
         let val num = read_mandatory_number stream
             val audio_format = num 2
             val channels = num 2
@@ -219,6 +223,8 @@ structure WaveReader :>
             else {
                     rate = sample_rate,
                     channels = channels,
+                    frame_count = Int.quot (data_size,
+                                            bytes_per_sample * channels),
                     bitdepth = bits_per_sample,
                     startpos = 0,
                     stream = stream,
@@ -269,12 +275,15 @@ structure WaveReader :>
         in
             if fmt_size = 16
             then
-                let val record = read_fmt_contents stream
+                let val record = read_fmt_contents
+                                     (overall_size - fmt_size)
+                                     stream
                     val pos = skip_to_data stream
                 in
                     OK {
                         rate = #rate record,
                         channels = #channels record,
+                        frame_count = #frame_count record,
                         bitdepth = #bitdepth record,
                         startpos = pos,
                         stream = stream,
@@ -305,6 +314,9 @@ structure WaveReader :>
     fun rate (t: t) =
         #rate t
 
+    fun frameCount (t: t) =
+        #frame_count t
+              
     fun seekTo (t : t, nframes) =
         let val bytes_per_frame = Position.fromInt
                                       (#channels t * Int.quot (#bitdepth t, 8))
