@@ -204,7 +204,7 @@ structure WaveReader :>
             val channels = num 2
             val sample_rate = num 4
             val byte_rate = num 4
-            val bytes_per_sample = num 2
+            val bytes_per_frame = num 2
             val bits_per_sample = num 2
             val read_sample =
                 case bits_per_sample of
@@ -223,8 +223,7 @@ structure WaveReader :>
             else {
                     rate = sample_rate,
                     channels = channels,
-                    frame_count = Int.quot (data_size,
-                                            bytes_per_sample * channels),
+                    frame_count = Int.quot (data_size, bytes_per_frame),
                     bitdepth = bits_per_sample,
                     startpos = 0,
                     stream = stream,
