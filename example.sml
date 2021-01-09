@@ -5,7 +5,7 @@ fun copyData (instr, outstr) =
         val expected = blockSize * WaveReader.channels instr
     in
         WaveWriter.writeInterleaved (outstr, frames);
-        if Vector.length frames < expected
+        if RealVector.length frames < expected
         then ()
         else copyData (instr, outstr)
     end
