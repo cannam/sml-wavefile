@@ -206,7 +206,21 @@ structure WaveReader :>
             SOME [b0, b1, b2] =>
             SOME ((Real.fromInt (bytes_to_signed24 (b0, b1, b2))) / 8388608.0)
           | _ => NONE
-               
+
+    fun read_sample_float (stream, state, data_size) =
+        case read_sample_buffered (stream, state, data_size, 4) of
+            SOME (bytes as [_,_,_,_]) =>
+            SOME (
+                let val r = Real.fromLarge IEEEReal.TO_NEAREST
+                      (Real32.toLarge
+                           (PackReal32Little.fromBytes
+                                (Word8Vector.fromList bytes)))
+                in
+                    print (Real.toString r ^ " ");
+                    r
+                end)
+          | _ => NONE
+                     
     fun read_fmt_contents stream =
         let val num = read_mandatory_number stream
             val audio_format = num 2
@@ -220,11 +234,15 @@ structure WaveReader :>
                     8 => read_sample_u8
                   | 16 => read_sample_s16
                   | 24 => read_sample_s24
+                  | 32 => if audio_format = 1
+                          then raise Fail ("32-bit samples are only " ^
+                                           "supported in float, not PCM")
+                          else read_sample_float
                   | _ => raise Fail ("Unsupported bit depth " ^
                                      (Position.toString bits_per_sample))
         in
-            if audio_format <> 1
-            then raise Fail "PCM only supported"
+            if audio_format <> 1 andalso bits_per_sample <> 32
+            then raise Fail "Only PCM and IEEE float formats supported"
             else { rate = Position.toInt sample_rate,
                    channels = Position.toInt channels,
                    bytes_per_frame = bytes_per_frame,
