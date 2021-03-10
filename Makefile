@@ -1,10 +1,13 @@
 
 SCRIPTS		:= ext/sml-buildscripts
 
+#BUILDER		:= ${SCRIPTS}/polybuild
+BUILDER		:= mlton
+
 all:	${SCRIPTS} example
 
 example:	example.mlb Makefile
-	${SCRIPTS}/polybuild example.mlb
+	${BUILDER} example.mlb
 
 clean:
 	rm -f example
