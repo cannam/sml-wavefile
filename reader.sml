@@ -210,15 +210,10 @@ structure WaveReader :>
     fun read_sample_float (stream, state, data_size) =
         case read_sample_buffered (stream, state, data_size, 4) of
             SOME (bytes as [_,_,_,_]) =>
-            SOME (
-                let val r = Real.fromLarge IEEEReal.TO_NEAREST
-                      (Real32.toLarge
-                           (PackReal32Little.fromBytes
-                                (Word8Vector.fromList bytes)))
-                in
-                    print (Real.toString r ^ " ");
-                    r
-                end)
+            SOME (Real.fromLarge IEEEReal.TO_NEAREST
+                                 (Real32.toLarge
+                                      (PackReal32Little.fromBytes
+                                           (Word8Vector.fromList bytes))))
           | _ => NONE
                      
     fun read_fmt_contents stream =
