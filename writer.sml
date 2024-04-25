@@ -42,6 +42,9 @@ signature AUDIO_FILE_WRITER = sig
         internal state in t *)
     val writeInterleaved : t * vec -> unit
 
+    (** Flush any buffered samples to file. *)
+    val flush : t -> unit
+                                          
     (** Close an audio file. Modifies internal state in t, which
         cannot be used subsequently *)
     val close : t -> unit
@@ -158,7 +161,10 @@ structure WaveWriter :>
 
     fun writeInterleaved (t: t, v) =
         RealVector.app (#write_sample t) v
-                           
+
+    fun flush (t: t) =
+        BinIO.flushOut (#stream t)
+                       
     fun close (t: t) =
         let val stream = #stream t
         in
