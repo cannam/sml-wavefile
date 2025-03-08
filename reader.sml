@@ -133,6 +133,7 @@ structure WaveReader :>
                at the end (although we may have a partial frame) *)
             val buffer_size = Position.fromInt 90000
             val max = data_size - (! (#buffer_offset state))
+            val max = if max < 0 then 0 else max
             val buffer_size = if buffer_size > max then max else buffer_size
             val v = BinIO.inputN (stream, Position.toInt buffer_size)
         in
